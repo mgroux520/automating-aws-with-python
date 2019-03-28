@@ -1,6 +1,7 @@
 #coding
 import boto3
 import click
+from botocore.exceptions import ClientError
 
 session = boto3.Session(profile_name='pythonAutomation')
 s3 = session.resource('s3')
@@ -22,6 +23,52 @@ def list_bucket_objects(bucket):
     "List objects in an s3 bucket"
     for obj in s3.Bucket(bucket).objects.all():
         print(obj)
+
+@cli.command('setup-bucket')
+@click.argument('bucket')
+def setup_bucket(bucket):
+    "Create and Configure s3 bucket"
+    new_bucket = None
+
+    try:
+        new_bucket = s3.create_bucket(
+            Bucket=bucket
+        )
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'BucketAlreadyOwnedByYou':
+            new_bucket = s3.Bucket(bucket)
+        else:
+            raise e
+
+    policy = """
+    {
+      "Version":"2012-10-17",
+      "Statement":[{
+      "Sid":"PublicReadGetObject",
+      "Effect":"Allow",
+      "Principal": "*",
+          "Action":["s3:GetObject"],
+          "Resource":["arn:aws:s3:::%s/*"
+          ]
+        }
+      ]
+    }
+    """ % new_bucket.name
+    policy = policy.strip()
+
+    pol = new_bucket.Policy()
+    pol.put(Policy=policy)
+
+    ws = new_bucket.Website()
+    ws.put(WebsiteConfiguration={
+        'ErrorDocument': {
+            'Key': 'error.html'
+        },
+        'IndexDocument': {
+            'Suffix': 'index.html'
+        }
+    })
+    return
 
 if __name__ == '__main__':
     cli()
